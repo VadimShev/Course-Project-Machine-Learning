@@ -1,0 +1,133 @@
+---
+title: "Course Project Machine Learning"
+author: "Vadim Shev"
+date: "Saturday, June 20, 2015"
+output: html_document
+---
+## Synopsis
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. 
+Our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and to predict the manner in which they did the exercise.
+
+Our research has allowed to build a model that allowed to make an accurate prediction classes. In addition, we found the best predictors vzhnye and a new model for these four predictors, gives exactly the same result as forecast. Reducing the number of predictors to 3 gives an erroneous forecast in two of the 20 cases, ie the accuracy of the forecast of 3 predictors composition of 90% . Most important are 4 variables: 3 sensor associated with the belt and one on the dumbbell. 
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr)
+library(memisc)
+library(caret)
+library(kernlab) 
+library(e1071)
+library(ISLR)
+library(ggplot2)
+library(Hmisc)
+library(RANN)
+library(doParallel)
+library(randomForest)
+library(pander)
+library(knitr)
+library(sjPlot)
+
+opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+## Data processing 
+Let's download the experimental data and see what they look like.
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+train<-read.csv(file="C:/BigData/8 Machin Lerning/3 Week/pml-training.csv", header = TRUE)
+test<-read.csv(file="C:/BigData/8 Machin Lerning/3 Week/pml-testing.csv", header = TRUE)
+
+```
+
+Data Frame train contains 160 variables for 19,622 values in each variable - more than 3 million items of data.
+
+### Initial analysis
+Is large in number of variables contain data NA. In addition, data such as the name of the test, time and box we will clearly meeshat training machines. Let's remove the first 7 columns (name, time window) and the data contain NA.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+train<-train[,-c(1:7)]
+train<-train[ , ! apply( train , 2 , function(x) any(is.na(x)) ) ]
+
+```
+We've got 86 of the primary predictor variables 160. Let us remove the zero-dispersion
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+nzv <- nearZeroVar(train) 
+train <-train[,-nzv]
+
+```
+We have only 53 predictors that significantly reduce the number of variables.
+
+### Further analysis
+Nevertheless, our data is very large, so further experiments will choose a random 10% of the data on them to benchmark our models. 
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+tr1 <- train[sample(1:nrow(train), 2000, replace=FALSE),]
+```
+We partition our data on training (75%) and the test sample
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+inTrain <- createDataPartition(y=tr1$classe, p=0.75, list=FALSE)
+training<-tr1[inTrain,]
+testing<-tr1[-inTrain,]
+
+```
+We construct a model of a random forest on our training sample, the importance of controlling the predictors. To reduce the load on your computer confine random forest of 200 trees.
+To speed up the calculations will use a separate package, instead of a random forest package caret. In addition we use our multi-core processor.
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+modelFit <- randomForest(as.factor(classe)~., data=training, importance=TRUE, ntree=200)
+
+```
+Let's try to make a prediction on the test sample and compare it with the available results.
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+pred1<-predict(modelFit,newdata=testing[,-53])
+# confusionMatrix(testing[,53], pred1)
+
+```
+We got quite a good accuracy of 93.6% and kappa of 0.92. You can do all the same manipulations with a complete set of data (instead of 10% of the sample as it is now).
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+inTrain <- createDataPartition(y=train$classe, p=0.75, list=FALSE)
+training<-train[inTrain,]
+testing<-train[-inTrain,]
+modelFit <- randomForest(as.factor(classe)~., data=training, importance=TRUE, ntree=200)
+pred1<-predict(modelFit,newdata=testing[,-53])
+confusionMatrix(testing[,53], pred1)
+
+
+```
+In the full sample accuracy and kappa significantly increased to 99.4% and 0.9925 respectively. It Allows us to conclude that our model has high predictive power, and we can apply it to all of our training data (without splitting into test and training), and on this model to make a forecast on the 20 test data.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+modelFit <- randomForest(as.factor(classe)~., data=train, importance=TRUE, ntree=200)
+pred<-predict(modelFit,newdata=test)
+
+```
+
+
+## Results
+The result of our prediction was the next set of classes:
+```{r, echo=FALSE}
+print(pred)
+```
+Let's look at the significance of the predictors on which we make the model:
+```{r, echo=FALSE}
+varImpPlot(modelFit)
+```
+This graph shows that the most important are 4 variables: 3 sensor associated with the belt and one on the dumbbell. 
+Moreover, construction of the model only at the four predictor gives exactly the same result prediction. But reducing the number of predictors to 3 gives an erroneous forecast in two of the 20 cases, ie the accuracy of the forecast predictors of 3 - 90% .
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+tr2<-train[c('roll_belt', 'pitch_belt', 'yaw_belt','magnet_dumbbell_z','classe')]
+modelFit1 <- randomForest(as.factor(classe)~., data=tr2, importance=TRUE, ntree=200)
+pred1<-predict(modelFit1,newdata=test)
+pred1
+```
+
+## Appendix
+
+Parallel processing cleanup:
+The stopCluster is necessary to terminate the extra processes
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+stopCluster(cl) 
+```
